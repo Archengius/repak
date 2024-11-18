@@ -1,3 +1,4 @@
+use std::io::Read;
 use crate::ext::{BoolExt, WriteExt};
 
 use super::{ext::ReadExt, Compression, Version, VersionMajor};
@@ -16,6 +17,7 @@ pub struct Footer {
     pub hash: [u8; 20],
     pub frozen: bool,
     pub compression: Vec<Option<Compression>>,
+    pub dbd_encryption_seed: [u32; 8],
 }
 
 impl Footer {
@@ -30,6 +32,17 @@ impl Footer {
         let index_offset = reader.read_u64::<LE>()?;
         let index_size = reader.read_u64::<LE>()?;
         let hash = reader.read_guid()?;
+        let mut dbd_encryption_seed: [u32; 8] = [0; 8];
+		if version_major >= VersionMajor::DeadByDaylight {
+            dbd_encryption_seed[0] = reader.read_u32::<LE>()?;
+            dbd_encryption_seed[1] = reader.read_u32::<LE>()?;
+            dbd_encryption_seed[2] = reader.read_u32::<LE>()?;
+            dbd_encryption_seed[3] = reader.read_u32::<LE>()?;
+            dbd_encryption_seed[4] = reader.read_u32::<LE>()?;
+            dbd_encryption_seed[5] = reader.read_u32::<LE>()?;
+            dbd_encryption_seed[6] = reader.read_u32::<LE>()?;
+            dbd_encryption_seed[7] = reader.read_u32::<LE>()?;
+		}
         let frozen = version.version_major() == VersionMajor::FrozenIndex && reader.read_bool()?;
         let compression = {
             let mut compression = Vec::with_capacity(match version {
@@ -77,6 +90,7 @@ impl Footer {
             hash,
             frozen,
             compression,
+            dbd_encryption_seed,
         })
     }
 
@@ -92,6 +106,18 @@ impl Footer {
         writer.write_u64::<LE>(self.index_offset)?;
         writer.write_u64::<LE>(self.index_size)?;
         writer.write_all(&self.hash)?;
+		if self.version_major >= VersionMajor::DeadByDaylight {
+            // XORing 0 will leave the value unchanged, which means that our index will be parsed by the game without any changes
+			let dbd_encryption_seed: u32 = 0;
+			writer.write_u32::<LE>(dbd_encryption_seed)?;
+			writer.write_u32::<LE>(dbd_encryption_seed)?;
+			writer.write_u32::<LE>(dbd_encryption_seed)?;
+			writer.write_u32::<LE>(dbd_encryption_seed)?;
+			writer.write_u32::<LE>(dbd_encryption_seed)?;
+			writer.write_u32::<LE>(dbd_encryption_seed)?;
+			writer.write_u32::<LE>(dbd_encryption_seed)?;
+			writer.write_u32::<LE>(dbd_encryption_seed)?;
+		}
         if self.version_major == VersionMajor::FrozenIndex {
             writer.write_bool(self.frozen)?;
         }
